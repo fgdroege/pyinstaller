@@ -170,32 +170,43 @@ def gir_library_path_fix(path):
     # On Mac OS we need to recompile the GIR files to reference the loader path,
     # but this is not necessary on other platforms.
     if compat.is_darwin:
+        override_gir_path = os.getenv('PYI_GIR_PATH')
 
-        # If using a virtualenv, the base prefix and the path of the typelib
-        # have really nothing to do with each other, so try to detect that.
-        common_path = os.path.commonprefix([compat.base_prefix, path])
-        if common_path == '/':
-            logger.debug("virtualenv detected? fixing the gir path...")
-            common_path = os.path.abspath(os.path.join(path, '..', '..', '..'))
+        if not override_gir_path:
+            # If using a virtualenv, the base prefix and the path of the typelib
+            # have really nothing to do with each other, so try to detect that.
+            common_path = os.path.commonprefix([compat.base_prefix, path])
+            if common_path == '/':
+                logger.debug("virtualenv detected? fixing the gir path...")
+                common_path = os.path.abspath(os.path.join(path, '..', '..', '..'))
 
-        gir_path = os.path.join(common_path, 'share', 'gir-1.0')
+            gir_path = os.path.join(common_path, 'share', 'gir-1.0')
 
-        typelib_name = os.path.basename(path)
-        gir_name = os.path.splitext(typelib_name)[0] + '.gir'
+        else:
+            gir_path = override_gir_path
 
-        gir_file = os.path.join(gir_path, gir_name)
+        gir_path = gir_path.split(":")
 
-        if not os.path.exists(gir_path):
+        for gpath in gir_path:
+            typelib_name = os.path.basename(path)
+            gir_name = os.path.splitext(typelib_name)[0] + '.gir'
+            gir_file = os.path.join(gpath, gir_name)
+
+            # Break the loop at first occurrence
+            if os.path.exists(gir_file):
+                break
+
+            if not os.path.exists(gpath) or not os.path.exists(gir_file):
+                gir_file = None
+
+        if gir_file is None:
             logger.error(
-                "Unable to find gir directory: %s.\nTry installing your platform's gobject-introspection package.",
-                gir_path
+                "Unable to find gir directory or file: %s.\nTry installing your platform's gobject-introspection package.",
+                gpath
             )
             return None
-        if not os.path.exists(gir_file):
-            logger.error(
-                "Unable to find gir file: %s.\nTry installing your platform's gobject-introspection package.", gir_file
-            )
-            return None
+
+        logger.info("Found gir file %s.", gir_file)
 
         with open(gir_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
