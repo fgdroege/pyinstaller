@@ -32,7 +32,7 @@ def _get_gst_plugin_path():
     reg = Gst.Registry.get()
     plug = reg.find_plugin('coreelements')
     path = plug.get_filename()
-    return os.path.dirname(path)
+    return [os.path.dirname(path)]
 
 
 def _format_plugin_pattern(plugin_name):
@@ -63,13 +63,20 @@ def hook(hook_api):
 
     # Plugins
     try:
-        plugin_path = _get_gst_plugin_path()
+        plugin_paths = _get_gst_plugin_path()
     except Exception as e:
         logger.warning("Failed to determine gstreamer plugin path: %s", e)
-        plugin_path = None
+        plugin_paths = None
 
-    if plugin_path:
-        plugin_path = pathlib.Path(plugin_path)
+    extra_plugin_paths = get_hook_config(hook_api, "gstreamer", "extra_plugin_paths")    
+    if extra_plugin_paths is not None:
+        if plugin_paths is None:
+            plugin_paths = extra_plugin_paths
+        else:
+            plugin_paths += extra_plugin_paths
+
+    if plugin_paths:
+        logger.info("Found Gst plugin paths: %s", plugin_paths)
 
         # Obtain optional include/exclude list from hook config
         include_list = get_hook_config(hook_api, "gstreamer", "include_plugins")
@@ -84,9 +91,12 @@ def hook(hook_api):
         # The names of GStreamer plugins typically start with libgst (or just gst, depending on the toolchain). We also
         # need to account for different extensions that might be used on a particular OS (for example, on macOS, the
         # extension may be either .so or .dylib).
-        for lib_pattern in ['*gst*.dll', '*gst*.dylib', '*gst*.so']:
-            binaries += [(str(filename), 'gst_plugins') for filename in plugin_path.glob(lib_pattern)
-                         if include_or_exclude_file(filename, include_list, exclude_list)]
+        for ppath in plugin_paths:
+            plugin_path = pathlib.Path(ppath)
+            logger.info("Processing %s", str(plugin_path))
+            for lib_pattern in ['*gst*.dll', '*gst*.dylib', '*gst*.so']:
+                binaries += [(str(filename), 'gst_plugins') for filename in plugin_path.glob(lib_pattern)
+                            if include_or_exclude_file(filename, include_list, exclude_list)]
 
     hook_api.add_datas(datas)
     hook_api.add_binaries(binaries)
